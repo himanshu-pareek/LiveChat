@@ -16,12 +16,15 @@ function LiveChatUser() {
   this.userPic = document.getElementById('user-pic');
   this.userName = document.getElementById('user-name');
   this.signInButton = document.getElementById('sign-in');
+  this.messagecardshow = document.getElementById('messages-card');
   this.signOutButton = document.getElementById('sign-out');
   this.signInSnackbar = document.getElementById('must-signin-snackbar');
   this.chatSlotAvailable = document.getElementById('chat_slot_available_text');
   this.categoryList = document.getElementById('categoryList');
   this.endChatButton = document.getElementById('chat_end_button');
   this.ratingForm = document.getElementById('ratingsForm');
+    this.rForm = document.getElementById('rForm');
+  this.ratingForm2 = document.getElementById('bliss');
   this.submitRatingButton = document.getElementById('submit-rating-button');
   this.sendEmailForm = document.getElementById('send-email-div');
   this.sendEmailButton = document.getElementById('send-email-button');
@@ -42,19 +45,18 @@ function LiveChatUser() {
     this.mediaCapture.click();
   }.bind(this));
   this.mediaCapture.addEventListener('change', this.saveImageMessage.bind(this));
-
   this.isSlotAvailable = false;
   this.whichChat = "none";
   this.isChatStarted = false;
   this.isFirstMessage = true;
   this.setChatState();
-
   this.endChatButton.setAttribute('disabled', 'true');
   this.endChatButton.addEventListener('click', this.endChat.bind(this));
   this.submitRatingButton.addEventListener('click', this.submitRating.bind(this));
   this.sendEmailButton.addEventListener('click', this.submitEmail.bind(this));
-
+  this.isAdminOnline = false;
   this.initFirebase();
+
 }
 
 LiveChatUser.prototype.setChatState = function(key, ina) {
@@ -67,16 +69,17 @@ LiveChatUser.prototype.setChatState = function(key, ina) {
     if (key == this.whichChat) {
       this.isSlotAvailable = !ina;
       if (!ina) {
-        this.chatSlotAvailable.innerHTML = "We are online now wih " + key;
+        this.chatSlotAvailable.innerHTML = "We are online now";
       } else {
         this.chatSlotAvailable.innerHTML = "We are offline now";
+		this.submitButton.setAttribute('disabled', 'true');
       }
     } else {
       if (!ina) {
         if (!this.isSlotAvailable) {
           this.isSlotAvailable = true;
           this.whichChat = key;
-          this.chatSlotAvailable.innerHTML = "We are online now wih " + key;
+          this.chatSlotAvailable.innerHTML = "We are online now with " + key;
         }
       }
     }
@@ -87,6 +90,7 @@ LiveChatUser.prototype.setChatState = function(key, ina) {
     this.isFirstMessage = true;
     this.endChatButton.setAttribute('disabled', 'true');
     this.ratingForm.style.display = "block";
+	this.rForm.style.display = "block";
   }
 };
 
@@ -105,6 +109,8 @@ LiveChatUser.prototype.initFirebase = function() {
   this.auth.onAuthStateChanged(this.onAuthStateChanged.bind(this));
 
   this.messagesRef = this.database.ref('none');
+  this.adminRef = this.database.ref('admin');
+  
 };
 
 // Loads chat messages history and listens for upcoming ones.
@@ -143,6 +149,29 @@ LiveChatUser.prototype.promptUserToSendEmail = function() {
   document.getElementById('send-email-name').value = this.auth.currentUser.displayName;
   document.getElementById('send-email-email').value = this.auth.currentUser.email;
 };
+
+// This method will decide state of admin (online or offline)
+LiveChatUser.prototype.loadAdminStatus = function() {
+  
+  this.adminRef.off();
+
+  var setStatus = function(data) {
+    var val = data.val();
+    if (data.key == 'isActive') {
+    	if (val) {
+    		// Admin is online
+		this.isAdminOnline = true;
+    		console.log ('admin is online');
+    	} else {
+    		// Admin is offline
+		this.isAdminOnline = false;
+    		console.log ('admin is offline');
+    	}
+    }
+  }.bind(this);
+  this.adminRef.on('child_added', setStatus);
+  this.adminRef.on('child_changed', setStatus);
+}
 
 // Saves a new message on the Firebase DB.
 LiveChatUser.prototype.saveMessage = function(e) {
@@ -204,6 +233,7 @@ LiveChatUser.prototype.saveMessage = function(e) {
 };
 
 // Sets the URL of the given img element with the URL of the image stored in Cloud Storage.
+
 LiveChatUser.prototype.setImageUrl = function(imageUri, imgElement) {
   // If the image is a Cloud Storage URI we fetch the URL.
   if (imageUri.startsWith('gs://')) {
@@ -218,6 +248,7 @@ LiveChatUser.prototype.setImageUrl = function(imageUri, imgElement) {
 
 // Saves a new message containing an image URI in Firebase.
 // This first saves the image in Firebase storage.
+ 
 LiveChatUser.prototype.saveImageMessage = function(event) {
   event.preventDefault();
   var file = event.target.files[0];
@@ -230,10 +261,12 @@ LiveChatUser.prototype.saveImageMessage = function(event) {
     var data = {
       message: 'You can only share images',
       timeout: 2000
+	  
     };
     this.signInSnackbar.MaterialSnackbar.showSnackbar(data);
     return;
   }
+  // check image size
   // Check if the user is signed-in
   if (this.checkSignedInWithMessage()) {
 
@@ -256,7 +289,7 @@ LiveChatUser.prototype.saveImageMessage = function(event) {
     });
 
   }
-};
+}; 
 
 // Signs-in LiveChatUser Chat.
 LiveChatUser.prototype.signIn = function() {
@@ -295,6 +328,8 @@ LiveChatUser.prototype.onAuthStateChanged = function(user) {
     this.loadMessages();
 
     this.loadChatStatus();
+    
+    this.loadAdminStatus();
 
     // We save the Firebase Messaging Device token and enable notifications.
     // this.saveMessagingDeviceToken();
@@ -422,6 +457,9 @@ LiveChatUser.prototype.endChat = function() {
     this.isFirstMessage = true;
     this.isChatStarted = false;
     this.messagesRef.remove();
+	this.messagecardshow.remove();
+	this.ratingForm2.remove();
+	this.ratingForm.style.display = "inline";
     this.activeChatsRef.child(this.whichChat).set({
       isActive: false,
       topic: "This chat is off"
@@ -452,6 +490,8 @@ LiveChatUser.prototype.submitRating = function() {
   // Send the data to PHP now... and wait for response to update the status div
   hr.send(vars); // Actually execute the request
   // document.getElementById("status").innerHTML = "processing...";
+  this.ratingForm.remove();
+  this.rForm.style.display = "inline";
 };
 
 LiveChatUser.prototype.submitEmail = function() {
